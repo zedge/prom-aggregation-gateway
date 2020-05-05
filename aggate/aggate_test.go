@@ -166,6 +166,9 @@ ui_external_lib_loaded{name="Munchkin",loaded="true"} 1
 
 	duplicateErrorWithServerLabels = `Duplicate labels: {__name__="ui_external_lib_loaded", appversion="3.2", loaded="true", name="Munchkin", osversion="2"}`
 
+	duplicateServerSideLabelsError = `duplicate serverside label: [osversion:1 appversion:3.2 osversion:2]`
+	duplicateLabelAlreadyDefinedinServerSideLabel = `label already defined in serverside label: a`
+
 	reorderedLabels1 = `# HELP counter A counter
 # TYPE counter counter
 counter{a="a",b="b"} 1
@@ -272,5 +275,37 @@ func TestAggateWithServerLabels(t *testing.T) {
 			})
 			t.Fatal(text)
 		}
+	}
+}
+
+func TestAggateWithDuplicateServerLabels(t *testing.T) {
+	a := NewAggate()
+
+	query := url.Values{}
+	query.Add("_label", "osversion:1")
+	query.Add("_label", "appversion:3.2")
+	query.Add("_label", "osversion:2")
+	expectedError := fmt.Errorf("%s", duplicateServerSideLabelsError)
+	if err := a.ParseAndMerge(strings.NewReader(in1), query, "_label"); err != nil {
+		if err.Error() != expectedError.Error() {
+			t.Fatalf("Expected %s, got %s", expectedError, err)
+		}
+	} else {
+		t.Fatalf("Expected error, was nil")
+	}
+}
+
+func TestAggateWithServerLabelDuplicatingLabelInInput(t *testing.T) {
+	a := NewAggate()
+
+	query := url.Values{}
+	query.Add("_label", "a:33")
+	expectedError := fmt.Errorf("%s", duplicateLabelAlreadyDefinedinServerSideLabel)
+	if err := a.ParseAndMerge(strings.NewReader(multilabel1), query, "_label"); err != nil {
+		if err.Error() != expectedError.Error() {
+			t.Fatalf("Expected %s, got %s", expectedError, err)
+		}
+	} else {
+		t.Fatalf("Expected error, was nil")
 	}
 }

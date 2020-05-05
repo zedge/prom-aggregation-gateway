@@ -196,6 +196,35 @@ func validateFamily(f *dto.MetricFamily) error {
 	return nil
 }
 
+func validateServerSideLabels(queryArguments url.Values, labelQueryParam string, metrics []*dto.Metric) error {
+	if _, foundLabel := queryArguments[labelQueryParam]; foundLabel {
+		// Map of fingerprints we've seen before in this family
+		observedLabels := make(map[string]bool, len(queryArguments[labelQueryParam]))
+
+		for _, label := range queryArguments[labelQueryParam] {
+			l := strings.Split(label, ":")
+			if len(l) != 2 {
+				return fmt.Errorf("serverside label with bad format: %v", l)
+			}
+			if _, alreadyObserved := observedLabels[l[0]]; alreadyObserved {
+				return fmt.Errorf("duplicate serverside label: %v", queryArguments[labelQueryParam])
+			}
+			observedLabels[l[0]] = true
+		}
+
+		for _, metric := range metrics {
+			for _, p := range metric.Label {
+				if _, definedInServersideLabel := observedLabels[p.GetName()]; definedInServersideLabel {
+					return fmt.Errorf("label already defined in serverside label: %v", p.GetName())
+				}
+			}
+		}
+	}
+	return nil
+}
+
+
+
 func appendServerLabels(queryArguments url.Values, labelQueryParam string, metrics []*dto.Metric) {
 	for _, m := range metrics {
 		if _, foundLabel := queryArguments[labelQueryParam]; foundLabel {
@@ -219,6 +248,11 @@ func (a *aggate) ParseAndMerge(r io.Reader, queryArguments url.Values, labelQuer
 	a.familiesLock.Lock()
 	defer a.familiesLock.Unlock()
 	for name, family := range inFamilies {
+		// Validate server side labels before appending
+		if err := validateServerSideLabels(queryArguments, labelQueryParam, family.Metric); err != nil {
+			return err
+		}
+
 		// Append labels server side by provided labels in labelQueryParam
 		if labelQueryParam != "" {
 			appendServerLabels(queryArguments, labelQueryParam, family.Metric)
